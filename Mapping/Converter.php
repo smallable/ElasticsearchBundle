@@ -59,7 +59,7 @@ class Converter
                     foreach ($value as $item) {
                         $result[$field][] = $this->normalize($item, $fieldMeta['sub_properties']);
                     }
-                } else {
+                } elseif (null !== $value) {
                     $result[$field] = $this->normalize($value, $fieldMeta['sub_properties']);
                 }
             } else {
