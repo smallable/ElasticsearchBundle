@@ -27,4 +27,14 @@ final class Embedded extends AbstractAnnotation implements PropertiesAwareInterf
      * @Doctrine\Common\Annotations\Annotation\Required
      */
     public $class;
+
+    /**
+     * Defines if related value will store a single object or an array of objects
+     *
+     * If this value is set to true, in the result ObjectIterator will be provided,
+     * otherwise you will get single object.
+     *
+     * @var bool Object or ObjectIterator
+     */
+    public $multiple;
 }

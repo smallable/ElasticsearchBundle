@@ -241,6 +241,7 @@ class DocumentParser
                 if ($annotation instanceof Embedded) {
                     $propertyMetadata['embeded'] = true;
                     $propertyMetadata['class'] = $annotation->class;
+                    $propertyMetadata['multiple'] = $annotation->multiple;
                     $propertyMetadata['sub_properties'] = $this->getPropertyMetadata(
                         new \ReflectionClass($annotation->class),
                         true
