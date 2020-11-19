@@ -32,11 +32,14 @@ class DocumentParser
     const OBJ_CACHED_FIELDS = 'ongr.obj_fields';
     const EMBEDDED_CACHED_FIELDS = 'ongr.embedded_fields';
     const ARRAY_CACHED_FIELDS = 'ongr.array_fields';
+    const PROPERTY_ANNOTATION = 'ONGR\ElasticsearchBundle\Annotation\Property';
+    const EMBEDDED_ANNOTATION = 'ONGR\ElasticsearchBundle\Annotation\Embedded';
 
     private $reader;
     private $properties = [];
     private $analysisConfig = [];
     private $cache;
+    private $aliases = [];
 
     public function __construct(Reader $reader, Cache $cache, array $analysisConfig = [])
     {
@@ -98,13 +101,22 @@ class DocumentParser
 
         $settings = $document->getSettings();
         $settings['analysis'] = $this->getAnalysisConfig($class);
+        $fields = [];
+        $classProperties = array_filter($this->getClassMetadata($class));
 
         return array_filter(array_map('array_filter', [
             'settings' => $settings,
             'mappings' => [
                 $this->getTypeName($class) => [
-                    'properties' => array_filter($this->getClassMetadata($class))
+                    'properties' => $classProperties
                 ]
+                ],
+            'aliases'   => [
+                'type' => $document->typeName,
+                'properties' => $classProperties,
+                'aliases' => $this->getAliases($class, $fields),
+                'namespace' => $class->getName(),
+                'class' => $class->getShortName(),
             ]
         ]));
     }
@@ -402,5 +414,175 @@ class DocumentParser
         $this->properties[$class->getName()] = $properties;
 
         return $properties;
+    }
+
+    /**
+     * Finds aliases for every property used in document including parent classes.
+     *
+     * @param \ReflectionClass $reflectionClass
+     * @param array            $metaFields
+     *
+     * @return array
+     */
+    private function getAliases(\ReflectionClass $reflectionClass, array &$metaFields = null)
+    {
+        $reflectionName = $reflectionClass->getName();
+
+        if ($metaFields === null && array_key_exists($reflectionName, $this->aliases)) {
+            return $this->aliases[$reflectionName];
+        }
+
+        $alias = [];
+
+        /** @var \ReflectionProperty[] $properties */
+        $properties = $this->getDocumentPropertiesReflection($reflectionClass);
+
+        foreach ($properties as $name => $property) {
+            $type = $this->getPropertyAnnotationData($property);
+            $type = $type !== null ? $type : $this->getEmbeddedAnnotationData($property);
+
+            // if ($type === null && $metaFields !== null) {
+            //     throw new \LogicException('This behavior has not been implemented in ES6 for now.');
+            // }
+            if ($type !== null) {
+                $alias[$type->name] = [
+                    'propertyName' => $name,
+                ];
+
+                if ($type instanceof Property) {
+                    $alias[$type->name]['type'] = $type->type;
+                }
+
+                switch (true) {
+                    case $property->isPublic():
+                        $propertyType = 'public';
+                        break;
+                    case $property->isProtected():
+                    case $property->isPrivate():
+                        $propertyType = 'private';
+                        $alias[$type->name]['methods'] = $this->getMutatorMethods(
+                            $reflectionClass,
+                            $name,
+                            $type instanceof Property ? $type->type : null
+                        );
+                        break;
+                    default:
+                        $message = sprintf(
+                            'Wrong property %s type of %s class types cannot '.
+                            'be static or abstract.',
+                            $name,
+                            $reflectionName
+                        );
+                        throw new \LogicException($message);
+                }
+                $alias[$type->name]['propertyType'] = $propertyType;
+
+                if ($type instanceof Embedded) {
+                    $child = new \ReflectionClass($type->class);
+                    $alias[$type->name] = array_merge(
+                        $alias[$type->name],
+                        [
+                            'type' => $this->getObjectMappingType($child),
+                            'multiple' => $type->multiple,
+                            'aliases' => $this->getAliases($child, $metaFields),
+                            'namespace' => $child->getName(),
+                        ]
+                    );
+                }
+            }
+        }
+
+        $this->aliases[$reflectionName] = $alias;
+
+        return $this->aliases[$reflectionName];
+    }
+
+    /**
+     * Checks if class have setter and getter, and returns them in array.
+     *
+     * @param \ReflectionClass $reflectionClass
+     * @param string           $property
+     *
+     * @return array
+     */
+    private function getMutatorMethods(\ReflectionClass $reflectionClass, $property, $propertyType)
+    {
+        $camelCaseName = ucfirst(Caser::camel($property));
+        $setterName = 'set'.$camelCaseName;
+        if (!$reflectionClass->hasMethod($setterName)) {
+            $message = sprintf(
+                'Missing %s() method in %s class. Add it, or change property to public.',
+                $setterName,
+                $reflectionClass->getName()
+            );
+            throw new \LogicException($message);
+        }
+
+        if ($reflectionClass->hasMethod('get'.$camelCaseName)) {
+            return [
+                'getter' => 'get' . $camelCaseName,
+                'setter' => $setterName
+            ];
+        }
+
+        if ($propertyType === 'boolean') {
+            if ($reflectionClass->hasMethod('is' . $camelCaseName)) {
+                return [
+                    'getter' => 'is' . $camelCaseName,
+                    'setter' => $setterName
+                ];
+            }
+
+            $message = sprintf(
+                'Missing %s() or %s() method in %s class. Add it, or change property to public.',
+                'get'.$camelCaseName,
+                'is'.$camelCaseName,
+                $reflectionClass->getName()
+            );
+            throw new \LogicException($message);
+        }
+
+        $message = sprintf(
+            'Missing %s() method in %s class. Add it, or change property to public.',
+            'get'.$camelCaseName,
+            $reflectionClass->getName()
+        );
+        throw new \LogicException($message);
+    }
+
+    /**
+     * Returns property annotation data from reader.
+     *
+     * @param \ReflectionProperty $property
+     *
+     * @return Property|object|null
+     */
+    private function getPropertyAnnotationData(\ReflectionProperty $property)
+    {
+        $result = $this->reader->getPropertyAnnotation($property, self::PROPERTY_ANNOTATION);
+
+        if ($result !== null && $result->name === null) {
+            $result->name = Caser::snake($property->getName());
+        }
+
+        return $result;
+    }
+
+    /**
+     * Returns Embedded annotation data from reader.
+     *
+     * @param \ReflectionProperty $property
+     *
+     * @return Embedded|object|null
+     */
+    private function getEmbeddedAnnotationData(\ReflectionProperty $property)
+    {
+        $result = $this->reader->getPropertyAnnotation($property, self::EMBEDDED_ANNOTATION);
+
+        if ($result !== null && $result->name === null) {
+            $result->name = Caser::snake($property->getName());
+        }
+
+        return $result;
     }
 }
