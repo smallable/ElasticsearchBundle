@@ -19,12 +19,9 @@ class AggregationValue implements \ArrayAccess, \IteratorAggregate
     const BUCKETS_KEY = 'buckets';
     const DOC_COUNT_KEY = 'doc_count';
 
-    /**
-     * @var array
-     */
     private $rawData;
 
-    public function __construct(array $rawData)
+    public function __construct($rawData)
     {
         $this->rawData = $rawData;
     }
