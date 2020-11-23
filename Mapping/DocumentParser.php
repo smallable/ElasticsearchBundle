@@ -36,6 +36,9 @@ class DocumentParser
     const PROPERTY_ANNOTATION = 'ONGR\ElasticsearchBundle\Annotation\Property';
     const EMBEDDED_ANNOTATION = 'ONGR\ElasticsearchBundle\Annotation\Embedded';
 
+    // Meta fields
+    const ID_ANNOTATION = 'ONGR\ElasticsearchBundle\Annotation\Id';
+
     private $reader;
     private $properties = [];
     private $analysisConfig = [];
@@ -442,9 +445,14 @@ class DocumentParser
             $type = $this->getPropertyAnnotationData($property);
             $type = $type !== null ? $type : $this->getEmbeddedAnnotationData($property);
 
-            // if ($type === null && $metaFields !== null) {
-            //     throw new \LogicException('This behavior has not been implemented in ES6 for now.');
-            // }
+            if (
+                $type === null && $metaFields !== null
+                && ($metaData = $this->getMetaFieldAnnotationData($property)) !== null
+            ) {
+                $metaFields[$metaData['name']] = $metaData['settings'];
+                $type = new \stdClass();
+                $type->name = $metaData['name'];
+            }
             if ($type !== null) {
                 $alias[$type->name] = [
                     'propertyName' => $name,
@@ -591,5 +599,28 @@ class DocumentParser
         }
 
         return $result;
+    }
+
+    /**
+     * Returns meta field annotation data from reader.
+     *
+     * @param \ReflectionProperty $property
+     * @param string              $directory The name of the Document directory in the bundle
+     *
+     * @return array
+     */
+    private function getMetaFieldAnnotationData($property)
+    {
+        /** @var MetaField $annotation */
+        $annotation = $this->reader->getPropertyAnnotation($property, self::ID_ANNOTATION);
+
+        if ($annotation === null) {
+            return null;
+        }
+
+        return [
+            'name' => $annotation->getName(),
+            'settings' => $annotation->getSettings(),
+        ];
     }
 }
