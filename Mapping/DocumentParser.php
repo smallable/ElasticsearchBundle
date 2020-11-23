@@ -16,6 +16,7 @@ use Doctrine\Common\Annotations\Reader;
 use Doctrine\Common\Cache\Cache;
 use ONGR\ElasticsearchBundle\Annotation\AbstractAnnotation;
 use ONGR\ElasticsearchBundle\Annotation\Embedded;
+use ONGR\ElasticsearchBundle\Annotation\Exclude;
 use ONGR\ElasticsearchBundle\Annotation\Id;
 use ONGR\ElasticsearchBundle\Annotation\Index;
 use ONGR\ElasticsearchBundle\Annotation\NestedType;
@@ -488,6 +489,12 @@ class DocumentParser
                             'namespace' => $child->getName(),
                         ]
                     );
+                }
+
+                if ($type instanceof Exclude) {
+                    $name = $type->name == 'id' ? '_id' : $type->name;
+
+                    $alias[$name]['exclude'] = $type->context;
                 }
             }
         }
