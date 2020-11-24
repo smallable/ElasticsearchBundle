@@ -35,6 +35,7 @@ class DocumentParser
     const ARRAY_CACHED_FIELDS = 'ongr.array_fields';
     const PROPERTY_ANNOTATION = 'ONGR\ElasticsearchBundle\Annotation\Property';
     const EMBEDDED_ANNOTATION = 'ONGR\ElasticsearchBundle\Annotation\Embedded';
+    const EXCLUDE_ANNOTATION = 'ONGR\ElasticsearchBundle\Annotation\Exclude';
 
     // Meta fields
     const ID_ANNOTATION = 'ONGR\ElasticsearchBundle\Annotation\Id';
@@ -443,7 +444,8 @@ class DocumentParser
 
         foreach ($properties as $name => $property) {
             $type = $this->getPropertyAnnotationData($property);
-            $type = $type !== null ? $type : $this->getEmbeddedAnnotationData($property);
+            $type = $type ?? $this->getEmbeddedAnnotationData($property);
+            $excludeType = $this->getExcludeAnnotationData($property);
 
             if (
                 $type === null && $metaFields !== null
@@ -499,10 +501,10 @@ class DocumentParser
                     );
                 }
 
-                if ($type instanceof Exclude) {
+                if ($excludeType instanceof Exclude) {
                     $name = $type->name == 'id' ? '_id' : $type->name;
 
-                    $alias[$name]['exclude'] = $type->context;
+                    $alias[$name]['exclude'] = $excludeType->context;
                 }
             }
         }
@@ -599,6 +601,18 @@ class DocumentParser
         }
 
         return $result;
+    }
+
+    /**
+     * Returns Exclude annotation data from reader.
+     *
+     * @param \ReflectionProperty $property
+     *
+     * @return Exclude|object|null
+     */
+    private function getExcludeAnnotationData(\ReflectionProperty $property)
+    {
+        return $this->reader->getPropertyAnnotation($property, self::EXCLUDE_ANNOTATION);
     }
 
     /**
