@@ -137,9 +137,12 @@ class IndexService
 
     public function createIndex($noMapping = false, $params = []): array
     {
+        $indexMetadata = $this->indexSettings->getIndexMetadata();
+        unset($indexMetadata['aliases']);
+
         $params = array_merge([
             'index' => $this->getIndexName(),
-            'body' => $noMapping ? [] : $this->indexSettings->getIndexMetadata(),
+            'body' => $noMapping ? [] : $indexMetadata,
         ], $params);
 
         #TODO Add event here.
